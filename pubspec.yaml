@@ -1,7 +1,7 @@
 name: lafzi_dart
 description: A phonetic search engine for Quranic text, ported from lafzi.js.
 version: 0.1.0
-# homepage: https://www.example.com
+homepage: https://github.com/agusibrahim/lafzi_dart
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

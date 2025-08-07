@@ -104,7 +104,7 @@ Future<List<LafziDocument>> rank(
 
     // Additional highlight custom
     final tmpHighlight = highlightSpan(realPos, 6);
-    doc.highlightPos = tmpHighlight.where((o) => o[0] != null && o[1] != null).toList();
+    doc.highlightPos = tmpHighlight.toList();
 
     // Additional scoring based on space
     if (quranTextData.isNotEmpty && doc.highlightPos.isNotEmpty) {
