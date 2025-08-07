@@ -2,6 +2,12 @@
 
 Lafzi Dart is a Dart library for searching Quranic verses using fuzzy matching and highlighting. It supports searching with various modes and provides verse details including translation and highlight positions.
 
+This project is a Dart port of the original JavaScript project: [lafzi.js](https://github.com/lafzi/lafzi.js).
+
+Credit to [skipness/lzstring-dart](https://github.com/skipness/lzstring-dart) for the Dart implementation of the lz-string compression algorithm used in this project.
+
+Uncompressed data can be found in the original project's repository: [lafzi.js/.uncompressed_data](https://github.com/lafzi/lafzi.js/tree/master/.uncompressed_data).
+
 ## Features
 
 - Fuzzy search for Quranic verses
