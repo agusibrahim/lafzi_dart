@@ -10,11 +10,13 @@ class LafziSearch {
   late Map<int, Map<int, String>> _dataMuqathaat;
 
   bool _isDataLoaded = false;
+  LafziFileLoader? lafziLoader;
+  LafziSearch({this.lafziLoader});
 
   Future<void> _parseData() async {
     if (_isDataLoaded) return;
 
-    final buffer = await loadData();
+    final buffer = await loadData(loader: lafziLoader);
 
     _dataMuqathaat = parseMuqathaat(buffer['muqathaat']!);
     _dataQuran = parseQuran(

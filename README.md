@@ -21,7 +21,7 @@ Add to your `pubspec.yaml` dependencies:
 
 ```yaml
 dependencies:
-  lafzi_dart: 0.1.0
+  lafzi_dart: <version>
 ```
 
 ## Usage
@@ -64,6 +64,53 @@ void main() async {
   }
 }
 ```
+
+## Custom File Loading
+
+The `LafziSearch` class requires an implementation of `LafziFileLoader` to load the necessary data files. This allows flexibility for different environments (e.g., pure Dart applications or Flutter applications).
+
+- **`DartFileLoader`**: For pure Dart applications (like console apps), you can use `DartFileLoader` which utilizes `dart:io` to read files from the file system.
+
+  ```dart
+  import 'dart:io';
+  import 'dart:typed_data';
+  import 'package:lafzi_dart/src/loaddata.dart';
+
+  class DartFileLoader implements LafziFileLoader {
+    @override
+    Future<Uint8List> load(String path) {
+      final file = File(path);
+      return file.readAsBytes();
+    }
+  }
+
+  // Initialize LafziSearch with DartFileLoader
+  final lafziSearch = LafziSearch(lafziLoader: DartFileLoader());
+  ```
+
+- **`FlutterFileLoader`**: For Flutter applications, you would typically load assets using `rootBundle`. An example `FlutterFileLoader` implementation would look like this (you'll need to uncomment and adapt this in your Flutter project):
+
+  ```dart
+import 'package:flutter/services.dart' show rootBundle; Add this import
+import 'dart:typed_data';
+import 'package:lafzi_dart/src/loaddata.dart';
+
+class FlutterFileLoader implements LafziFileLoader {
+  @override
+  Future<Uint8List> load(String path) async {
+    /* Make sure to add your data files to your pubspec.yaml under assets:
+    assets:
+      - assets/data/ 
+    */
+    final ByteData data = await rootBundle.load('assets/data/$path');
+    return data.buffer.asUint8List();
+  }
+}
+
+Initialize LafziSearch with FlutterFileLoader
+final lafziSearch = LafziSearch(lafziLoader: FlutterFileLoader());
+  ```
+  Remember to copy all data files (from the `data/` directory) to your Flutter project's `assets/data/` folder and declare them in your `pubspec.yaml` under the `assets` section.
 
 ## Data Files
 
