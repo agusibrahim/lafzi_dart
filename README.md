@@ -90,7 +90,7 @@ The `LafziSearch` class requires an implementation of `LafziFileLoader` to load 
 
 - **`FlutterFileLoader`**: For Flutter applications, you would typically load assets using `rootBundle`. An example `FlutterFileLoader` implementation would look like this (you'll need to uncomment and adapt this in your Flutter project):
 
-  ```dart
+```dart
 import 'package:flutter/services.dart' show rootBundle; Add this import
 import 'dart:typed_data';
 import 'package:lafzi_dart/src/loaddata.dart';
