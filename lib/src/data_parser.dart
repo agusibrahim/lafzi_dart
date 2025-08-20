@@ -23,27 +23,31 @@ Map<int, Map<int, String>> parseMuqathaat(String buffer) {
   return result;
 }
 
-/// Parses Quran text and translation buffers into a list of QuranVerse objects.
-/// @param bufferText The raw string content of quran_teks.txt
-/// @param bufferTrans The raw string content of quran_trans_indonesian.txt
-/// @returns A list of QuranVerse objects.
-List<QuranVerse> parseQuran(String bufferText, String bufferTrans) {
+/// Parses Quran text and optional translation buffers into a list of
+/// [QuranVerse] objects.
+///
+/// [bufferText] is the raw string content of `quran_teks.txt`.
+/// [bufferTrans] is the raw string content of `quran_trans_indonesian.txt` and
+/// may be omitted. When omitted, the `trans` field of each [QuranVerse] will be
+/// empty.
+List<QuranVerse> parseQuran(String bufferText, [String? bufferTrans]) {
   final lineText = bufferText.split('\n');
-  final lineTrans = bufferTrans.split('\n');
+  final lineTrans = bufferTrans?.split('\n') ?? [];
   final result = <QuranVerse>[];
 
   for (int i = 0; i < lineText.length; i++) {
-    if (i >= lineTrans.length) continue; // Ensure translation line exists
-
     final dataText = lineText[i].split('|');
-    final dataTrans = lineTrans[i].split('|');
+    final dataTrans = i < lineTrans.length ? lineTrans[i].split('|') : [];
 
-    if (dataText.length >= 4 && dataTrans.length >= 3) {
+    if (dataText.length >= 4) {
       final surah = int.tryParse(dataText[0]);
       final name = dataText[1];
       final ayat = int.tryParse(dataText[2]);
       final text = dataText[3];
-      final trans = dataTrans[2];
+      String trans = '';
+      if (dataTrans.length >= 3) {
+        trans = dataTrans[2];
+      }
 
       if (surah != null && ayat != null) {
         result.add(QuranVerse(
@@ -57,6 +61,18 @@ List<QuranVerse> parseQuran(String bufferText, String bufferTrans) {
     }
   }
   return result;
+}
+
+/// Updates the translation of an existing list of [QuranVerse] with the
+/// provided buffer from `quran_trans_indonesian.txt`.
+void updateQuranTranslation(List<QuranVerse> verses, String bufferTrans) {
+  final lineTrans = bufferTrans.split('\n');
+  for (int i = 0; i < lineTrans.length && i < verses.length; i++) {
+    final dataTrans = lineTrans[i].split('|');
+    if (dataTrans.length >= 3) {
+      verses[i] = verses[i].copyWith(trans: dataTrans[2]);
+    }
+  }
 }
 
 /// Converts a comma-delimited string to a list of integers.
