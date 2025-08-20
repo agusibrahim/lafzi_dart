@@ -3,14 +3,20 @@ import 'dart:typed_data';
 import 'package:lafzi_dart/src/lzstring.dart';
 
 /// Placeholder URLs for remote data. Replace with real direct URLs.
-const String urlMuqathaat = 'https://example.com/muqathaat.lz';
-const String urlIndexV = 'https://example.com/index_v.lz';
-const String urlIndexNv = 'https://example.com/index_nv.lz';
-const String urlPosmapV = 'https://example.com/posmap_v.lz';
-const String urlPosmapNv = 'https://example.com/posmap_nv.lz';
-const String urlQuranText = 'https://example.com/quran_teks.lz';
+const String urlMuqathaat =
+      'https://github.com/agusibrahim/lafzi_dart/releases/download/v0.1.0/muqathaat.lz';
+const String urlIndexV =
+    'https://github.com/agusibrahim/lafzi_dart/releases/download/v0.1.0/index_v.lz';
+const String urlIndexNv =
+    'https://github.com/agusibrahim/lafzi_dart/releases/download/v0.1.0/index_nv.lz';
+const String urlPosmapV =
+    'https://github.com/agusibrahim/lafzi_dart/releases/download/v0.1.0/posmap_v.lz';
+const String urlPosmapNv =
+    'https://github.com/agusibrahim/lafzi_dart/releases/download/v0.1.0/posmap_nv.lz';
+const String urlQuranText =
+    'https://github.com/agusibrahim/lafzi_dart/releases/download/v0.1.0/quran_teks.lz';
 const String urlQuranTrans =
-    'https://example.com/quran_trans_indonesian.lz';
+    'https://github.com/agusibrahim/lafzi_dart/releases/download/v0.1.0/quran_trans_indonesian.lz';
 
 class _DataFile {
   final String name;

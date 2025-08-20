@@ -4,6 +4,7 @@ import 'package:lafzi_dart/src/data_parser.dart';
 import 'package:lafzi_dart/src/searcher.dart';
 import 'package:lafzi_dart/src/models.dart';
 import 'package:lafzi_dart/src/quran_stub.dart';
+export 'package:lafzi_dart/src/models.dart' show QuranVerse;
 
 class LafziSearch {
   late Map<String, Map<String, List<IndexEntry>>> _dataIndex;
