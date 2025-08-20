@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:lafzi_dart/src/loaddata.dart';
 import 'package:lafzi_dart/src/data_parser.dart';
 import 'package:lafzi_dart/src/searcher.dart';
 import 'package:lafzi_dart/src/models.dart';
+import 'package:lafzi_dart/src/quran_stub.dart';
 
 class LafziSearch {
   late Map<String, Map<String, List<IndexEntry>>> _dataIndex;
@@ -10,27 +12,62 @@ class LafziSearch {
   late Map<int, Map<int, String>> _dataMuqathaat;
 
   bool _isDataLoaded = false;
+  bool _textLoaded = false;
+  bool _translationLoaded = false;
   LafziFileLoader? lafziLoader;
   LafziSearch({this.lafziLoader});
 
-  Future<void> _parseData() async {
-    if (_isDataLoaded) return;
+  Future<void> _parseData({
+    bool loadQuranText = false,
+    bool loadTranslation = false,
+    void Function(String message)? onProgress,
+    Directory? cacheDir,
+  }) async {
+    final needsText = loadQuranText && !_textLoaded;
+    final needsTrans = loadTranslation && !_translationLoaded;
+    if (_isDataLoaded && !needsText && !needsTrans) return;
 
-    final buffer = await loadData(loader: lafziLoader);
-
-    _dataMuqathaat = parseMuqathaat(buffer['muqathaat']!);
-    _dataQuran = parseQuran(
-      buffer['quran_teks']!,
-      buffer['quran_trans_indonesian']!,
+    final buffer = await loadData(
+      loader: lafziLoader,
+      loadQuranText: needsText,
+      loadTranslation: needsTrans,
+      onProgress: onProgress,
+      cacheDir: cacheDir,
     );
-    _dataPosmap = {};
-    _dataPosmap['nv'] = parsePosmap(buffer['posmap_nv']!);
-    _dataPosmap['v'] = parsePosmap(buffer['posmap_v']!);
-    _dataIndex = {};
-    _dataIndex['nv'] = parseIndex(buffer['index_nv']!);
-    _dataIndex['v'] = parseIndex(buffer['index_v']!);
 
-    _isDataLoaded = true;
+    if (!_isDataLoaded) {
+      _dataMuqathaat = parseMuqathaat(buffer['muqathaat']!);
+      _dataPosmap = {
+        'nv': parsePosmap(buffer['posmap_nv']!),
+        'v': parsePosmap(buffer['posmap_v']!),
+      };
+      _dataIndex = {
+        'nv': parseIndex(buffer['index_nv']!),
+        'v': parseIndex(buffer['index_v']!),
+      };
+      _dataQuran = generateEmptyQuran();
+      _isDataLoaded = true;
+    }
+
+    if (buffer.containsKey('quran_teks')) {
+      final oldTrans = _dataQuran.isNotEmpty
+          ? _dataQuran.map((e) => e.trans).toList()
+          : null;
+      _dataQuran = parseQuran(buffer['quran_teks']!,
+          buffer['quran_trans_indonesian']);
+      if (oldTrans != null) {
+        for (int i = 0; i < oldTrans.length && i < _dataQuran.length; i++) {
+          _dataQuran[i] = _dataQuran[i].copyWith(trans: oldTrans[i]);
+        }
+      }
+      _textLoaded = true;
+      if (buffer.containsKey('quran_trans_indonesian')) {
+        _translationLoaded = true;
+      }
+    } else if (buffer.containsKey('quran_trans_indonesian')) {
+      updateQuranTranslation(_dataQuran, buffer['quran_trans_indonesian']!);
+      _translationLoaded = true;
+    }
   }
 
   double _optimizedThreshold(double t) {
@@ -54,13 +91,22 @@ class LafziSearch {
     bool isHilight = true,
     String? query,
     bool multipleHighlightPos = false,
+    bool loadQuranText = false,
+    bool loadTranslation = false,
+    void Function(String message)? onProcess,
+    Directory? cacheDir,
   }) async {
     query = _checkQuery(query);
     if (query == null) {
       return [];
     }
 
-    await _parseData(); // Ensure data is loaded
+    await _parseData(
+      loadQuranText: loadQuranText,
+      loadTranslation: loadTranslation,
+      onProgress: onProcess,
+      cacheDir: cacheDir,
+    ); // Ensure data is loaded
 
     List<LafziDocument> searched = await search(
       _dataIndex[mode]!,
