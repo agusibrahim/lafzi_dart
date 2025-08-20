@@ -70,7 +70,8 @@ class LafziSearch {
     );
     double oldThreshold = threshold;
 
-    if (searched.isEmpty && (oldThreshold - threshold).abs() < 0.001) { // Check if threshold hasn't changed yet
+    if (searched.isEmpty && (oldThreshold - threshold).abs() < 0.001) {
+      // first relaxation attempt
       threshold = _optimizedThreshold(threshold);
       searched = await search(
         _dataIndex[mode]!,
@@ -78,8 +79,10 @@ class LafziSearch {
         threshold,
         mode,
       );
+      oldThreshold = threshold;
     }
-    if (searched.isEmpty && (oldThreshold - threshold).abs() < 0.001) { // Check again if threshold hasn't changed
+    if (searched.isEmpty && (oldThreshold - threshold).abs() < 0.001) {
+      // second relaxation attempt with updated baseline
       threshold = _optimizedThreshold(threshold);
       searched = await search(
         _dataIndex[mode]!,
