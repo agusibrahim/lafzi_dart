@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:lafzi_dart/lafzi_dart.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:sqlite3_flutter_libs/sqlite3_flutter_libs.dart';
 
 const _dbUrl =
     'https://github.com/agusibrahim/lafzi_dart/releases/download/v0.1.0/lafzi_compressed.sqlite';
@@ -54,6 +55,9 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _initDb() async {
     try {
+      // Load native SQLite library for Android/iOS
+      await applyWorkaroundToOpenSqlite3OnOldAndroidVersions();
+
       final docDir = await getApplicationDocumentsDirectory();
       final dbPath = '${docDir.path}/$_dbFile';
       final file = File(dbPath);
