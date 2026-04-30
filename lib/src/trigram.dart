@@ -1,29 +1,23 @@
-/// Extracts trigrams from a string.
-/// @param input The input string.
-/// @returns A list of trigrams.
-List<String> trigram(String input) {
-  final s = input.trim();
-  final length = s.length;
+/// Trigram extraction for phonetic search indexing.
+library;
 
-  if (length < 3) return [];
-  if (length == 3) return [s];
+import 'phonetics.dart';
 
-  final trigrams = <String>[];
-  for (int i = 0; i <= length - 3; i++) {
-    trigrams.add(s.substring(i, i + 3));
+/// Extracts trigrams from a phonetic string.
+/// Returns map of trigram -> frequency.
+Map<String, int> extract(String phonetic) {
+  final result = <String, int>{};
+  if (phonetic.length < 3) return result;
+
+  for (var i = 0; i <= phonetic.length - 3; i++) {
+    final tri = phonetic.substring(i, i + 3);
+    result[tri] = (result[tri] ?? 0) + 1;
   }
-
-  return trigrams;
+  return result;
 }
 
-/// Extracts trigrams with their frequencies.
-/// @param input The input string.
-/// @returns A map where keys are trigrams and values are their frequencies.
-Map<String, int> extract(String input) {
-  final trig = trigram(input);
-  final acc = <String, int>{};
-  for (final e in trig) {
-    acc[e] = (acc.containsKey(e) ? acc[e]! + 1 : 1);
-  }
-  return acc;
+/// Convenience: convert query then extract trigrams.
+Map<String, int> extractFromQuery(String query, {bool withVowel = true}) {
+  final phonetic = withVowel ? convert(query) : convertNoVowel(query);
+  return extract(phonetic);
 }

@@ -1,125 +1,165 @@
-# Lafzi Dart
+# lafzi_dart
 
-Lafzi Dart is a Dart library for searching Quranic verses using fuzzy matching and highlighting. It automatically downloads and caches the compressed data files needed for searching, and can optionally load the full verse text and Indonesian translation.
+Al-Quran phonetic search engine for Dart & Flutter. Search Quran verses by Latin transliteration (e.g. "kunfayakun", "bismillah") using trigram indexing and phonetic matching.
 
-This project is a Dart port of the original JavaScript project: [lafzi.js](https://github.com/lafzi/lafzi.js).
+Pure Dart — no Flutter dependency required. Works as a standalone Dart package.
 
-Credit to [skipness/lzstring-dart](https://github.com/skipness/lzstring-dart) for the Dart implementation of the lz-string compression algorithm used in this project.
-
-Uncompressed data can be found in the original project's repository: [lafzi.js/.uncompressed_data](https://github.com/lafzi/lafzi.js/tree/master/.uncompressed_data).
+Ported from [lafzi.js](https://github.com/lafzi/lafzi.js) with SQLite backend for fast, efficient search.
 
 ## Features
 
-- Fuzzy search for Quranic verses.
-- Highlight matched text.
-- Returns verse details: surah name, ayat number, text, translation, score, and highlight positions.
-- Automatically downloads and caches required `.lz` data files.
-- Optional loading of Quran text and Indonesian translation.
-- Progress callback to report download and decompression steps.
-- No Flutter dependency; uses Dart IO for file access.
-- Pluggable `LafziFileLoader` for custom data sources (e.g. Flutter assets).
+- Phonetic search with Latin transliteration input
+- Two modes: **vocal** (with harakat) and **nonvocal** (consonants only)
+- Configurable match threshold (0.3 - 0.95)
+- Text highlighting of matched regions
+- SQLite backend — fast, 50ms per query
+- Optional gzip compression for database (~45% smaller)
+- Pure Dart, works standalone and in Flutter
 
 ## Installation
 
-Add to your `pubspec.yaml` dependencies:
-
 ```yaml
 dependencies:
-  lafzi_dart: <version>
+  lafzi_dart: ^1.0.0
 ```
 
-## Usage
+## Database
 
-Example usage in a Dart console app:
+You need a `lafzi.sqlite` database file. Either:
+
+1. **Download pre-built** from [GitHub Releases](https://github.com/agusibrahim/lafzi_dart/releases)
+2. **Build from source** using the included tool:
+   ```bash
+   dart run tool/build_db.dart <source_dir> data/lafzi.sqlite
+   dart run tool/build_db.dart <source_dir> data/lafzi_compressed.sqlite --compress
+   ```
+
+Source data files are from [lafzi.js/.uncompressed_data](https://github.com/lafzi/lafzi.js/tree/master/.uncompressed_data).
+
+## Usage
 
 ```dart
 import 'package:lafzi_dart/lafzi_dart.dart';
 
-void main() async {
-  final lafziSearch = LafziSearch();
+final db = await LafziDatabase.open('path/to/lafzi_compressed.sqlite');
 
-  final result = await lafziSearch.searchLafzi(
-    query: 'sibgo',
-    mode: 'v',
-    threshold: 0.95,
-    loadQuranText: true,
-    loadTranslation: true,
-    onProcess: (msg) => print(msg),
-  );
+final results = await search(
+  db,
+  'kunfayakun',
+  options: SearchOptions(
+    mode: 'v',          // 'v' = vocal, 'nv' = nonvocal
+    threshold: 0.95,    // 0.3 - 0.95
+    isHilight: true,    // generate highlighted text
+  ),
+);
 
-  for (final verse in result) {
-    print('Surah: ${verse.name}, Ayat: ${verse.ayat}');
-    print('Text: ${verse.text}');
-    print('Translation: ${verse.trans}');
-    if (verse.textHilight != null) {
-      print('Highlighted Text: ${verse.textHilight}');
-    }
-    print('Score: ${verse.score?.toStringAsFixed(4)}');
-    print('Highlight Positions: ${verse.highlightPos}');
-  }
+for (final verse in results) {
+  print('${verse.surahName} ${verse.ayatNo}');
+  print('  ${verse.textArabic}');
+  print('  ${verse.textIndonesian}');
+  print('  Score: ${verse.score}');
 }
+
+db.close();
 ```
 
-`loadQuranText` and `loadTranslation` control whether the verse text and Indonesian translation are downloaded and included in the results. If omitted, the fields will be empty. The optional `onProcess` callback provides messages about download and decompression progress. Data is cached in the system temporary directory by default; pass a custom `cacheDir` to `searchLafzi` to change the cache location.
+### Phonetic Conversion Only
 
-## Custom File Loading
-
-By default, `LafziSearch` downloads the required `.lz` data files from the GitHub release and caches them locally. In environments without network access or when bundling the data with your application, implement `LafziFileLoader` and pass it to `LafziSearch`.
-
-- **`DartFileLoader`**: Load files from the local file system in a pure Dart application.
-
-  ```dart
-  import 'dart:io';
-  import 'dart:typed_data';
-  import 'package:lafzi_dart/src/loaddata.dart';
-
-  class DartFileLoader implements LafziFileLoader {
-    @override
-    Future<Uint8List> load(String path) => File('data/$path').readAsBytes();
-  }
-
-  final lafziSearch = LafziSearch(lafziLoader: DartFileLoader());
-  ```
-
-- **`FlutterFileLoader`**: Load files from Flutter assets.
+No database needed for phonetic conversion:
 
 ```dart
-import 'dart:typed_data';
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:lafzi_dart/src/loaddata.dart';
+import 'package:lafzi_dart/lafzi_dart.dart';
 
-class FlutterFileLoader implements LafziFileLoader {
-  @override
-  Future<Uint8List> load(String path) async {
-    final data = await rootBundle.load('assets/data/$path');
-    return data.buffer.asUint8List();
-  }
-}
-
-final lafziSearch = LafziSearch(lafziLoader: FlutterFileLoader());
+print(convert('bismillah'));        // BISMILAH
+print(convertNoVowel('bismillah')); // BSMLH
+print(convert('alhamdulillah'));    // XALHAMDULILAH
 ```
 
-Remember to copy the `.lz` files (from the `data/` directory) into your application's assets and declare them in `pubspec.yaml`.
+## Search Options
 
-## Data Files
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `mode` | `String` | `'v'` | `'v'` = with vowels, `'nv'` = consonants only |
+| `threshold` | `double` | `0.95` | Match threshold (0.3 - 0.95). Lower = more results |
+| `isHilight` | `bool` | `true` | Generate `<span>` highlighted text |
+| `multipleHighlightPos` | `bool` | `false` | Return all highlight spans |
 
-The following compressed `.lz` files are used by the library and are downloaded automatically when needed:
+## QuranVerse Fields
 
-- `muqathaat.lz`
-- `index_v.lz`
-- `index_nv.lz`
-- `posmap_v.lz`
-- `posmap_nv.lz`
-- `quran_teks.lz`
-- `quran_trans_indonesian.lz`
+| Field | Type | Description |
+|-------|------|-------------|
+| `surahNo` | `int` | Surah number (1-114) |
+| `surahName` | `String` | Surah name |
+| `ayatNo` | `int` | Verse number |
+| `textArabic` | `String` | Arabic text |
+| `textIndonesian` | `String` | Indonesian translation |
+| `score` | `double` | Match score (higher = better) |
+| `highlightPositions` | `List<int>` | Highlight positions |
+| `textHilight` | `String?` | HTML-highlighted text |
+| `muqathaatText` | `String?` | Muqathaat text (if applicable) |
 
-If you provide a custom `LafziFileLoader`, ensure these files are available in your chosen location.
+## Compressed Database
 
-## How It Works
+Use `--compress` flag to build a smaller database:
 
-- The library downloads compressed data files on demand and caches them.
-- Files are decompressed and parsed for fast search and retrieval.
-- The `searchLafzi` method performs fuzzy matching and returns a list of matching verses.
+```
+Uncompressed: 14.3 MB
+Compressed:    7.9 MB (-45%)
+
+Search overhead: ~6-13ms per query
+```
+
+The library auto-detects compressed vs uncompressed databases.
+
+## Flutter Example
+
+See `example/flutter_example/` for a complete Flutter app with:
+- Async database download with progress indicator
+- Cached database (downloads only once)
+- Non-blocking search
+- Vocal/nonvocal mode toggle
+- Adjustable threshold
+
+```bash
+cd example/flutter_example
+flutter pub get
+flutter run
+```
+
+## CLI Example
+
+```bash
+# From repo root
+dart run example/cli_search.dart data/lafzi.sqlite "kunfayakun"
+dart run example/cli_search.dart data/lafzi.sqlite "bismillah" v 0.8
+dart run example/cli_search.dart data/lafzi.sqlite "alhamdulillah" nv 0.7
+```
+
+## Project Structure
+
+```
+lafzi_dart/
+├── lib/
+│   ├── lafzi_dart.dart        # Public API
+│   └── src/
+│       ├── phonetics.dart      # Phonetic conversion
+│       ├── trigram.dart        # Trigram extraction
+│       ├── array.dart          # LCS, contiguity, highlight span
+│       ├── database.dart       # SQLite layer + QuranVerse
+│       ├── searcher.dart       # Search pipeline
+│       └── hilight.dart        # Text highlighting
+├── tool/
+│   └── build_db.dart           # Build SQLite from source data
+├── example/
+│   ├── cli_search.dart         # Dart CLI example
+│   └── flutter_example/        # Flutter app example
+└── test/
+    └── lafzi_test.dart         # Unit + integration tests
+```
+
+## Credit
+
+- Original algorithm: [lafzi.js](https://github.com/lafzi/lafzi.js) by [Sigit Prabowo](https://github.com/sprabowo)
 
 ## License
 

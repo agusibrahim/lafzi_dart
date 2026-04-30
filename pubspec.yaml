@@ -1,20 +1,13 @@
 name: lafzi_dart
-description: A phonetic search engine for Quranic text, ported from lafzi.js.
-version: 0.1.0
+description: Al-Quran phonetic search engine. Search Quran verses by Latin transliteration using trigram indexing and phonetic matching. Pure Dart, works with Flutter.
+version: 1.0.0
 homepage: https://github.com/agusibrahim/lafzi_dart
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
 
-dev_dependencies:
-  lints: ^2.0.0
-  test: ^1.21.0
+dependencies:
+  sqlite3: ^2.4.0
 
-assets:
-  - assets/muqathaat.txt
-  - assets/index_v.jsn
-  - assets/index_nv.jsn
-  - assets/posmap_v.txt
-  - assets/posmap_nv.txt
-  - assets/quran_teks.txt
-  - assets/quran_trans_indonesian.txt
+dev_dependencies:
+  test: ^1.25.0

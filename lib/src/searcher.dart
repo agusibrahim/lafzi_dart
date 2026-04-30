@@ -1,191 +1,317 @@
+/// Core search engine for Lafzi.
+///
+/// Pipeline: query -> phonetic convert -> trigram extract ->
+///           index lookup -> match -> LCS rank -> prepare results
+library;
+
+import 'dart:convert';
 import 'dart:math';
 
-import 'package:lafzi_dart/src/array_utils.dart';
-import 'package:lafzi_dart/src/models.dart';
-import 'package:lafzi_dart/src/phonetic.dart' as phonetic;
-import 'package:lafzi_dart/src/trigram.dart' as trigram;
-import 'package:lafzi_dart/src/hilight.dart';
+import 'array.dart' as arr;
+import 'database.dart' show LafziDatabase, QuranVerse, TrigramEntry;
+import 'hilight.dart' show hilight;
+import 'phonetics.dart' show convert, convertNoVowel;
+import 'trigram.dart' show extract;
 
-/// Performs the search operation.
-/// @param docIndex The document index (Map of trigrams to IndexEntry lists).
-/// @param query The search query string.
-/// @param threshold The minimum score threshold for results.
-/// @param mode The search mode ('v' for vowel, 'nv' for no vowel).
-/// @returns A Future that resolves with a list of LafziDocument objects.
-Future<List<LafziDocument>> search(
-  Map<String, List<IndexEntry>> docIndex,
-  String query,
-  double threshold,
-  String mode,
-) async {
-  String queryFinal;
-
-  if (mode == 'v') {
-    queryFinal = phonetic.convert(query);
-  } else {
-    queryFinal = phonetic.convertNoVowel(query);
-  }
-
-  final queryTrigrams = trigram.extract(queryFinal);
-  if (queryTrigrams.isEmpty) {
-    return [];
-  }
-
-  final matchedDocs = <int, LafziDocument>{};
-
-  queryTrigrams.forEach((trigram, trigramFreq) {
-    if (docIndex.containsKey(trigram) && docIndex[trigram] != null) {
-      final indexEntry = docIndex[trigram]!;
-      for (final match in indexEntry) {
-        if (matchedDocs.containsKey(match.docID)) {
-          matchedDocs[match.docID]!.matchCount +=
-              min(trigramFreq, match.freq);
-        } else {
-          matchedDocs[match.docID] = LafziDocument(
-            id: match.docID,
-            matchCount: 1,
-          );
-        }
-        matchedDocs[match.docID]!.matchTerms[trigram] = match.pos;
-      }
-    }
-  });
-
-  final filteredDocs = <LafziDocument>[];
-  final minScore = (threshold * queryTrigrams.keys.length);
-
-  for (final docID in matchedDocs.keys) {
-    final doc = matchedDocs[docID]!;
-
-    final lcsResult = lcs(flattenValues(doc.matchTerms));
-    final orderScore = lcsResult.length;
-
-    doc.lcs = lcsResult;
-    doc.contigScore = contiguityScore(lcsResult);
-    doc.score = orderScore * doc.contigScore;
-
-    if (doc.score >= minScore) {
-      filteredDocs.add(doc);
-    }
-  }
-
-  return filteredDocs;
+/// Internal match document during search.
+class _MatchDoc {
+  int id = 0;
+  int matchCount = 0;
+  double contigScore = 0;
+  double score = 0;
+  Map<String, List<int>> matchTerms = {};
+  List<int> lcsResult = [];
+  List<List<int>> highlightPos = [];
 }
 
-/// Ranks the search results.
-/// @param filteredDocs A list of LafziDocument objects from the search phase.
-/// @param posmapData The position mapping data.
-/// @param quranTextData The Quran text data.
-/// @param multipleHighlightPos Whether to allow multiple highlight positions.
-/// @returns A Future that resolves with a ranked list of LafziDocument objects.
-Future<List<LafziDocument>> rank(
-  List<LafziDocument> filteredDocs,
-  List<List<int>> posmapData,
-  List<QuranVerse> quranTextData,
-  {bool multipleHighlightPos = false,}
-) async {
-  for (final doc in filteredDocs) {
-    final realPos = <int>[];
-    final posmap = posmapData[doc.id - 1];
-    final seq = <int>[];
+/// Search options.
+class SearchOptions {
+  /// 'v' = with vowel, 'nv' = no vowel
+  final String mode;
 
-    for (final pos in doc.lcs) {
+  /// Minimum match threshold (0.0 - 1.0)
+  final double threshold;
+
+  /// Whether to generate highlighted text
+  final bool isHilight;
+
+  /// Whether to return all highlight spans (true) or just the best (false)
+  final bool multipleHighlightPos;
+
+  const SearchOptions({
+    this.mode = 'v',
+    this.threshold = 0.95,
+    this.isHilight = true,
+    this.multipleHighlightPos = false,
+  });
+}
+
+/// Performs a full search against the database.
+///
+/// Returns ranked list of [QuranVerse] matching the query.
+Future<List<QuranVerse>> search(
+  LafziDatabase db,
+  String query, {
+  SearchOptions options = const SearchOptions(),
+}) async {
+  // 1. Clean query
+  final cleaned = _cleanQuery(query);
+  if (cleaned == null || cleaned.isEmpty) return [];
+
+  // 2. Convert to phonetic + extract trigrams
+  final phonetic =
+      options.mode == 'v' ? convert(cleaned) : convertNoVowel(cleaned);
+  final queryTrigrams = extract(phonetic);
+  if (queryTrigrams.isEmpty) return [];
+
+  // 3. Lookup trigrams in index
+  final indexEntries = db.lookupTrigrams(queryTrigrams.keys, options.mode);
+
+  // 4. Match documents
+  var matchedDocs = _matchDocuments(queryTrigrams, indexEntries);
+
+  // 5. Score and filter
+  var threshold = options.threshold;
+  final trigramCount = queryTrigrams.length;
+  var filtered = _scoreAndFilter(matchedDocs, threshold, trigramCount);
+
+  // 6. Retry with relaxed threshold if no results
+  if (filtered.isEmpty) {
+    threshold = _optimizeThreshold(threshold);
+    filtered = _scoreAndFilter(matchedDocs, threshold, trigramCount);
+  }
+  if (filtered.isEmpty && threshold != _optimizeThreshold(threshold)) {
+    threshold = _optimizeThreshold(threshold);
+    filtered = _scoreAndFilter(matchedDocs, threshold, trigramCount);
+  }
+
+  if (filtered.isEmpty) return [];
+
+  // 7. Rank: resolve highlight positions from posmap
+  final ranked = _rank(
+    filtered,
+    db,
+    options.mode,
+    multipleHighlightPos: options.multipleHighlightPos,
+  );
+
+  // 8. Prepare final results
+  return _prepare(
+    ranked,
+    db,
+    isHilight: options.isHilight,
+    multipleHighlightPos: options.multipleHighlightPos,
+  );
+}
+
+// --- Internal helpers ---
+
+String? _cleanQuery(String? query) {
+  if (query == null || query.trim().isEmpty) return null;
+  return Uri.decodeComponent(query.trim()).replaceAll(RegExp(r'[-+]'), ' ');
+}
+
+double _optimizeThreshold(double t) {
+  var tmp = (double.parse(t.toStringAsPrecision(2)) * 10).roundToDouble();
+  if (tmp - 1 != 0) {
+    return (--tmp) / 10;
+  }
+  return t;
+}
+
+/// Step 4: Match documents from trigram postings.
+Map<int, _MatchDoc> _matchDocuments(
+  Map<String, int> queryTrigrams,
+  Map<String, TrigramEntry> indexEntries,
+) {
+  final docs = <int, _MatchDoc>{};
+
+  for (final entry in queryTrigrams.entries) {
+    final trigram = entry.key;
+    final triFreq = entry.value;
+    final idxEntry = indexEntries[trigram];
+    if (idxEntry == null) continue;
+
+    for (final posting in idxEntry.postings.entries) {
+      final docId = posting.key;
+      final positions = posting.value;
+      final docFreq = positions.length;
+
+      if (docs.containsKey(docId)) {
+        docs[docId]!.matchCount += min(triFreq, docFreq);
+      } else {
+        docs[docId] = _MatchDoc()
+          ..id = docId
+          ..matchCount = 1;
+      }
+
+      docs[docId]!.matchTerms[trigram] = positions;
+    }
+  }
+
+  return docs;
+}
+
+/// Step 5: Score with LCS + contiguity, filter by threshold.
+List<_MatchDoc> _scoreAndFilter(
+  Map<int, _MatchDoc> docs,
+  double threshold,
+  int trigramCount,
+) {
+  final minScore = (threshold * trigramCount).toStringAsPrecision(2);
+  final minScoreVal = double.parse(minScore);
+
+  final result = <_MatchDoc>[];
+
+  for (final doc in docs.values) {
+    final flat = arr.flattenValues(doc.matchTerms);
+    final lcsResult = arr.lcs(flat);
+    final orderScore = lcsResult.length.toDouble();
+
+    doc.lcsResult = lcsResult;
+    doc.contigScore = arr.contiguityScore(lcsResult);
+    doc.score = orderScore * doc.contigScore;
+
+    if (doc.score >= minScoreVal) {
+      result.add(doc);
+    }
+  }
+
+  return result;
+}
+
+/// Step 7: Resolve highlight positions from position maps.
+List<_MatchDoc> _rank(
+  List<_MatchDoc> docs,
+  LafziDatabase db,
+  String mode, {
+  bool multipleHighlightPos = false,
+}) {
+  // Batch fetch verses for posmaps
+  final ids = docs.map((d) => d.id).toList();
+  final verses = db.getVerses(ids);
+  final verseMap = <int, Map<String, dynamic>>{};
+  for (final v in verses) {
+    verseMap[v['id'] as int] = v;
+  }
+
+  for (final doc in docs) {
+    final verse = verseMap[doc.id];
+    if (verse == null) continue;
+
+    // Parse posmap
+    final posmapKey = mode == 'v' ? 'vocal_posmap' : 'nonvocal_posmap';
+    final posmapStr = verse[posmapKey] as String?;
+    if (posmapStr == null || posmapStr.isEmpty) continue;
+
+    final posmap = posmapStr
+        .split(',')
+        .map((s) => int.tryParse(s.trim()) ?? 0)
+        .toList();
+
+    // Build real positions from LCS
+    final seq = <int>[];
+    for (final pos in doc.lcsResult) {
       seq.add(pos);
       seq.add(pos + 1);
       seq.add(pos + 2);
     }
-    final uniqueSeq = seq.unique();
+    final uniqueSeq = seq.toSet().toList()..sort();
 
-    for (final pos in uniqueSeq) {
-      if (pos - 1 >= 0 && pos - 1 < posmap.length) {
-        realPos.add(posmap[pos - 1]);
+    final realPos = <int>[];
+    for (final s in uniqueSeq) {
+      if (s - 1 < posmap.length) {
+        realPos.add(posmap[s - 1]);
       }
     }
 
-    // Additional highlight custom
-    final tmpHighlight = highlightSpan(realPos, 6);
-    doc.highlightPos = tmpHighlight.toList();
+    // Compute highlight spans
+    var hlSpans = arr.highlightSpan(realPos);
+    hlSpans = hlSpans
+        .where((s) => s[0] != null && s.length > 1 && s[1] != null)
+        .toList();
 
-    // Additional scoring based on space
-    if (quranTextData.isNotEmpty && doc.highlightPos.isNotEmpty) {
+    doc.highlightPos = hlSpans;
+
+    // Extend highlight at word boundaries
+    final docText = verse['ayat_arabic'] as String;
+    if (docText.isNotEmpty && hlSpans.isNotEmpty) {
       if (multipleHighlightPos) {
-        for (int k = 0; k < doc.highlightPos.length; k++) {
+        for (var k = 0; k < doc.highlightPos.length; k++) {
           final endPos = doc.highlightPos[k][1];
-          if (doc.id - 1 < quranTextData.length) {
-            final docText = quranTextData[doc.id - 1].text;
-            if (endPos + 1 < docText.length && docText[endPos + 1] == ' ' ||
-                endPos + 2 < docText.length && docText[endPos + 2] == ' ' ||
-                endPos + 3 < docText.length && docText[endPos + 3] == ' ') {
-              doc.highlightPos[k][1] += 2; // Add 2 characters
+          if (endPos + 3 < docText.length) {
+            if (docText[endPos + 1] == ' ' ||
+                docText[endPos + 2] == ' ' ||
+                docText[endPos + 3] == ' ') {
+              doc.highlightPos[k][1] += 2;
             }
           }
         }
       } else {
         final endPos = doc.highlightPos.last[1];
-        if (doc.id - 1 < quranTextData.length) {
-          final docText = quranTextData[doc.id - 1].text;
-          if (endPos + 1 < docText.length && docText[endPos + 1] == ' ' ||
-              endPos + 2 < docText.length && docText[endPos + 2] == ' ' ||
-              endPos + 3 < docText.length && docText[endPos + 3] == ' ') {
-            doc.highlightPos[0][1] += 2; // Add 2 characters
+        if (endPos + 3 < docText.length) {
+          if (docText[endPos + 1] == ' ' ||
+              docText[endPos + 2] == ' ' ||
+              docText[endPos + 3] == ' ') {
+            doc.highlightPos[doc.highlightPos.length - 1][1] += 2;
           }
         }
       }
     }
-
-    // Clear temporary data
-    doc.lcs = [];
-    doc.matchTerms = {};
-    doc.contigScore = 0.0;
   }
 
-  filteredDocs.sort((docA, docB) => docB.score.compareTo(docA.score));
-
-  return filteredDocs;
+  // Sort by score descending
+  docs.sort((a, b) => b.score.compareTo(a.score));
+  return docs;
 }
 
-/// Prepares the search result for view.
-/// @param rankedSearchResult A list of ranked LafziDocument objects.
-/// @param quranTextData The Quran text data.
-/// @param muqathaatData Optional muqathaat data.
-/// @param isHilight Whether to apply highlighting.
-/// @param multipleHighlightPos Whether to allow multiple highlight positions.
-/// @returns A Future that resolves with a list of QuranVerse objects with search results.
-Future<List<QuranVerse>> prepare(
-  List<LafziDocument> rankedSearchResult,
-  List<QuranVerse> quranTextData,
-  {Map<int, Map<int, String>>? muqathaatData,
+/// Step 8: Build final QuranVerse results.
+List<QuranVerse> _prepare(
+  List<_MatchDoc> ranked,
+  LafziDatabase db, {
   bool isHilight = true,
-  bool multipleHighlightPos = false,}
-) async {
+  bool multipleHighlightPos = false,
+}) {
+  // Batch fetch verses
+  final ids = ranked.map((d) => d.id).toList();
+  final verses = db.getVerses(ids);
+  final verseMap = <int, Map<String, dynamic>>{};
+  for (final v in verses) {
+    verseMap[v['id'] as int] = v;
+  }
+
   final result = <QuranVerse>[];
-  for (final searchRes in rankedSearchResult) {
-    if (searchRes.id - 1 < quranTextData.length) {
-      final quranData = quranTextData[searchRes.id - 1];
-      var obj = QuranVerse(
-        surah: quranData.surah,
-        name: quranData.name,
-        ayat: quranData.ayat,
-        text: quranData.text,
-        trans: quranData.trans,
-        score: searchRes.score,
-        highlightPos: searchRes.highlightPos,
-      );
 
-      if (muqathaatData != null &&
-          muqathaatData.containsKey(obj.surah) &&
-          muqathaatData[obj.surah]!.containsKey(obj.ayat)) {
-        obj=obj.copyWith(text: muqathaatData[obj.surah]![obj.ayat]!);
-      }
+  for (final doc in ranked) {
+    final verse = verseMap[doc.id];
+    if (verse == null) continue;
 
-      obj.highlightPos = (multipleHighlightPos) ? obj.highlightPos : obj.highlightPos?.take(1).toList();
+    var text = verse['ayat_arabic'] as String;
+    final muqathaat = verse['muqathaat'] as String?;
 
-      // Hilight feature
-      if (isHilight && obj.highlightPos != null) {
-        obj.textHilight = hilight(obj.text, obj.highlightPos!); // Pass non-null highlightPos
-      }
-      result.add(obj);
+    final hlPos = multipleHighlightPos
+        ? doc.highlightPos
+        : doc.highlightPos.isEmpty
+            ? <List<int>>[]
+            : [doc.highlightPos.first];
+
+    String? textHilight;
+    if (isHilight && hlPos.isNotEmpty) {
+      textHilight = hilight(text, hlPos);
     }
+
+    result.add(QuranVerse(
+      id: doc.id,
+      surahNo: verse['surah_no'] as int,
+      surahName: verse['surah_name'] as String,
+      ayatNo: verse['ayat_no'] as int,
+      textArabic: text,
+      textIndonesian: verse['ayat_indonesian'] as String,
+      muqathaatText: muqathaat,
+      highlightPositions: hlPos.expand((e) => e).toList(),
+      score: doc.score,
+      textHilight: textHilight,
+    ));
   }
 
   return result;
