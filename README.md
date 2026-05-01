@@ -1,5 +1,7 @@
 # lafzi_dart
 
+[![pub package](https://img.shields.io/pub/v/lafzi_dart.svg)](https://pub.dev/packages/lafzi_dart)
+
 Al-Quran phonetic search engine for Dart & Flutter. Search Quran verses by Latin transliteration (e.g. "kunfayakun", "bismillah") using trigram indexing and phonetic matching.
 
 Pure Dart — no Flutter dependency required. Works as a standalone Dart package.
