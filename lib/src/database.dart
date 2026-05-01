@@ -77,24 +77,23 @@ String decompressToString(Uint8List data) {
 /// Database wrapper for Lafzi search.
 class LafziDatabase {
   Database? _db;
-  final String _dbPath;
   final bool _ownConnection;
   late final bool _compressed;
 
-  LafziDatabase._(this._dbPath, this._db, this._ownConnection);
+  LafziDatabase._(this._db, this._ownConnection);
 
   /// Opens a database from file path.
   /// Automatically detects if the DB uses compressed BLOBs.
   static Future<LafziDatabase> open(String path) async {
     final db = sqlite3.open(path);
-    final instance = LafziDatabase._(path, db, true);
+    final instance = LafziDatabase._(db, true);
     instance._detectFormat();
     return instance;
   }
 
   /// Wraps an existing sqlite3 Database connection.
   static LafziDatabase wrap(Database db) {
-    final instance = LafziDatabase._('', db, false);
+    final instance = LafziDatabase._(db, false);
     instance._detectFormat();
     return instance;
   }

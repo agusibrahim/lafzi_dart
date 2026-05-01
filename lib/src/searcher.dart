@@ -4,7 +4,6 @@
 ///           index lookup -> match -> LCS rank -> prepare results
 library;
 
-import 'dart:convert';
 import 'dart:math';
 
 import 'array.dart' as arr;
@@ -228,7 +227,7 @@ List<_MatchDoc> _rank(
     // Compute highlight spans
     var hlSpans = arr.highlightSpan(realPos);
     hlSpans = hlSpans
-        .where((s) => s[0] != null && s.length > 1 && s[1] != null)
+        .where((s) => s.length > 1)
         .toList();
 
     doc.highlightPos = hlSpans;
