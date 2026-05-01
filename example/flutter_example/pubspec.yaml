@@ -15,10 +15,9 @@ dependencies:
   sqlite3_flutter_libs: ^0.5.0
   cupertino_icons: ^1.0.8
 
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^5.0.0
-
 flutter:
   uses-material-design: true
+  fonts:
+    - family: MeQuran
+      fonts:
+        - asset: assets/fonts/me_quran.ttf

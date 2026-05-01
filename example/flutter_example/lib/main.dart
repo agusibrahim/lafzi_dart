@@ -47,6 +47,74 @@ class _SearchPageState extends State<SearchPage> {
   LafziDatabase? _db;
   String? _error;
 
+  // Parse HTML highlight spans to TextSpans with yellow background
+  Widget _buildHighlightedText(String textHilight) {
+    final span = RegExp(r"<span class='hl_block'>(.*?)</span>");
+    final matches = span.allMatches(textHilight).toList();
+
+    if (matches.isEmpty) {
+      return Text(
+        textHilight,
+        textAlign: TextAlign.right,
+        textDirection: TextDirection.rtl,
+        style: const TextStyle(
+          fontSize: 22,
+          fontFamily: 'MeQuran',
+          color: Colors.black87,
+        ),
+      );
+    }
+
+    final textSpans = <TextSpan>[];
+    int lastEnd = 0;
+
+    for (final match in matches) {
+      // Text before highlight
+      if (match.start > lastEnd) {
+        textSpans.add(TextSpan(
+          text: textHilight.substring(lastEnd, match.start),
+          style: const TextStyle(
+            fontFamily: 'MeQuran',
+            fontSize: 22,
+            color: Colors.black87,
+          ),
+        ));
+      }
+
+      // Highlighted text
+      final hlText = match.group(1) ?? '';
+      textSpans.add(TextSpan(
+        text: hlText,
+        style: const TextStyle(
+          fontFamily: 'MeQuran',
+          fontSize: 22,
+          color: Colors.black87,
+          backgroundColor: Colors.yellow,
+        ),
+      ));
+
+      lastEnd = match.end;
+    }
+
+    // Remaining text
+    if (lastEnd < textHilight.length) {
+      textSpans.add(TextSpan(
+        text: textHilight.substring(lastEnd),
+        style: const TextStyle(
+          fontFamily: 'MeQuran',
+          fontSize: 22,
+          color: Colors.black87,
+        ),
+      ));
+    }
+
+    return RichText(
+      textAlign: TextAlign.right,
+      text: TextSpan(children: textSpans),
+      textDirection: TextDirection.rtl,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -149,7 +217,7 @@ class _SearchPageState extends State<SearchPage> {
         options: SearchOptions(
           mode: _mode,
           threshold: _threshold,
-          isHilight: false,
+          isHilight: true,
         ),
       );
       if (!mounted) return;
@@ -294,12 +362,7 @@ class _SearchPageState extends State<SearchPage> {
                                   ],
                                 ),
                                 const SizedBox(height: 8),
-                                Text(
-                                  v.textArabic,
-                                  textAlign: TextAlign.right,
-                                  textDirection: TextDirection.rtl,
-                                  style: const TextStyle(fontSize: 18),
-                                ),
+                                _buildHighlightedText(v.textHilight ?? v.textArabic),
                                 const SizedBox(height: 4),
                                 Text(
                                   v.textIndonesian,
